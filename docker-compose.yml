@@ -1,0 +1,62 @@
+# UAC AI Parser - Docker Compose
+# Includes Ollama for local LLM inference
+
+version: '3.8'
+
+services:
+  uac-ai-parser:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: uac-ai-parser
+    volumes:
+      - ./data/input:/data/input:ro
+      - ./data/output:/data/output
+      - ./data/vectorstore:/data/vectorstore
+      - ./config:/app/config:ro
+    environment:
+      - UAC_LLM_PROVIDER=ollama
+      - UAC_OLLAMA_BASE_URL=http://ollama:11434
+      - UAC_CHROMA_PERSIST_DIR=/data/vectorstore
+    depends_on:
+      - ollama
+    networks:
+      - uac-network
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: uac-ollama
+    volumes:
+      - ollama-models:/root/.ollama
+    ports:
+      - "11434:11434"
+    # Uncomment for GPU support (NVIDIA)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    networks:
+      - uac-network
+
+  # Optional: Plaso for super timeline generation
+  plaso:
+    image: log2timeline/plaso:latest
+    container_name: uac-plaso
+    volumes:
+      - ./data/input:/data/input:ro
+      - ./data/output:/data/output
+    profiles:
+      - plaso
+    networks:
+      - uac-network
+
+networks:
+  uac-network:
+    driver: bridge
+
+volumes:
+  ollama-models:
+    name: uac-ollama-models

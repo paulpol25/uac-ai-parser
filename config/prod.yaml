@@ -1,0 +1,28 @@
+# UAC AI Parser - Production Configuration
+# Use this profile for production analysis with OpenAI
+
+# LLM Settings
+llm_provider: openai
+llm_model: gpt-4-turbo
+temperature: 0.1
+# Set OPENAI_API_KEY environment variable
+
+# Vector Store Settings
+chroma_persist_dir: /var/lib/uac-ai-parser/vectorstore
+embedding_model: text-embedding-3-small
+
+# Preprocessing Settings
+max_chunk_size: 200
+
+# Plaso Integration
+plaso_docker_image: log2timeline/plaso:latest
+plaso_timeout: 7200
+
+# Output Settings
+output_format: json
+verbose: false
+debug: false
+
+# Analysis Settings
+anomaly_threshold: 0.7
+max_concurrent_requests: 5

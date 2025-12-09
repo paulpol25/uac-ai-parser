@@ -1,0 +1,101 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "uac-ai-parser"
+version = "0.1.0"
+description = "AI-powered UAC (Unix-like Artifacts Collector) output parser for DFIR analysis"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [
+    { name = "Paul", email = "" }
+]
+keywords = [
+    "dfir",
+    "forensics",
+    "incident-response",
+    "uac",
+    "timeline-analysis",
+    "ai",
+    "llm",
+    "security"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "pandas>=2.0.0",
+    "pyyaml>=6.0",
+    "langchain>=0.3.0,<0.4.0",
+    "langchain-community>=0.3.0,<0.4.0",
+    "langchain-ollama>=0.2.0,<0.3.0",
+    "langchain-openai>=0.2.0,<0.3.0",
+    "chromadb>=0.5.0,<0.6.0",
+    "sentence-transformers>=2.2.0,<3.0.0",
+    "plotly>=5.18.0",
+    "pydantic>=2.0.0,<3.0.0",
+    "python-dateutil>=2.8.0",
+    "tqdm>=4.65.0",
+    "jinja2>=3.1.0",
+    "httpx>=0.25.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+plaso = [
+    "docker>=6.0.0",
+]
+
+[project.scripts]
+uac-ai = "uac_ai_parser.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/paulpol25/uac-ai-parser"
+Documentation = "https://github.com/paulpol25/uac-ai-parser#readme"
+Repository = "https://github.com/paulpol25/uac-ai-parser"
+Issues = "https://github.com/paulpol25/uac-ai-parser/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/uac_ai_parser"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

@@ -1,0 +1,24 @@
+# UAC AI Parser - Development Configuration
+# Use this profile for local development with Ollama
+
+# LLM Settings
+llm_provider: ollama
+llm_model: llama3
+temperature: 0.3
+ollama_base_url: http://localhost:11434
+
+# Vector Store Settings
+chroma_persist_dir: ~/.uac-ai-parser/vectorstore
+embedding_model: all-MiniLM-L6-v2
+
+# Preprocessing Settings
+max_chunk_size: 100
+
+# Plaso Integration
+plaso_docker_image: log2timeline/plaso:latest
+plaso_timeout: 3600
+
+# Output Settings
+output_format: text
+verbose: true
+debug: false

@@ -1,0 +1,34 @@
+# UAC AI Parser - Local LLM Configuration
+# Use this profile with local Ollama models for air-gapped environments
+
+# LLM Settings
+llm_provider: ollama
+llm_model: codellama:13b  # Good for code/forensic analysis
+temperature: 0.2
+ollama_base_url: http://localhost:11434
+
+# Alternative models to try:
+# llm_model: llama3:8b        # Fast, general purpose
+# llm_model: llama3:70b       # More capable, requires more RAM
+# llm_model: mixtral:8x7b     # Good balance of speed and capability
+# llm_model: deepseek-coder   # Excellent for technical analysis
+
+# Vector Store Settings
+chroma_persist_dir: ~/.uac-ai-parser/vectorstore
+embedding_model: all-MiniLM-L6-v2
+
+# Preprocessing Settings
+max_chunk_size: 75  # Smaller chunks for local models
+
+# Plaso Integration
+plaso_docker_image: log2timeline/plaso:latest
+plaso_timeout: 3600
+
+# Output Settings
+output_format: text
+verbose: true
+debug: false
+
+# Analysis Settings
+anomaly_threshold: 0.6
+max_tokens: 4096  # Adjust based on model context window
