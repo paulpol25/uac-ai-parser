@@ -277,12 +277,9 @@ uac-ai parse /tmp/uac-hostname-*.tar.gz --verbose
 
 ## Roadmap
 
-- [ ] Memory dump analysis integration
-- [ ] YARA rule integration for IoC detection
-- [ ] Multi-system correlation
-- [ ] Web UI for visual analysis
-- [ ] Custom LLM fine-tuning scripts
-- [ ] Integration with MITRE ATT&CK framework
+- [ ] AI improvements
+- [ ] SoD like timeline generation (CSV format)
+- [ ] Improvements to the Analyze functions 
 - [ ] Sigma rule support
 
 ## Contributing
