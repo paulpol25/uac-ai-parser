@@ -91,7 +91,7 @@ class Preprocessor:
     
     def __init__(
         self,
-        chunk_size: int = 2000,
+        chunk_size: int = 1500,
         chunk_overlap: int = 200,
         include_metadata: bool = True,
         max_chunks_per_type: int = 1000,
@@ -138,8 +138,11 @@ class Preprocessor:
     
     def _generate_chunk_id(self, content: str, prefix: str) -> str:
         """Generate unique chunk ID."""
-        hash_input = f"{prefix}:{content[:100]}"
-        return f"{prefix}_{hashlib.md5(hash_input.encode()).hexdigest()[:12]}"
+        import uuid
+        # Use full content hash + random UUID to ensure global uniqueness
+        hash_input = content.encode()
+        content_hash = hashlib.md5(hash_input).hexdigest()[:8]
+        return f"{prefix}_{content_hash}_{str(uuid.uuid4())[:8]}"
     
     def _tag_content(self, content: str) -> list[str]:
         """Add security-relevant tags to content."""
@@ -451,6 +454,9 @@ class Preprocessor:
         
         content = "".join(content_lines)
         
+        # Add a "keywords" section to help semantic retrieval for broad queries
+        content += "\n\nKeywords: list of users, usernames, user accounts, login accounts, system users, /etc/passwd content"
+        
         chunk = DocumentChunk(
             chunk_id=self._generate_chunk_id(content, "users"),
             content=content,
@@ -458,7 +464,7 @@ class Preprocessor:
             source="passwd",
             source_type="live_response",
             artifact_type="user",
-            relevance_tags=self._tag_content(content) + ["user", "account"],
+            relevance_tags=self._tag_content(content) + ["user", "account", "passwd"],
         )
         chunks.append(chunk)
         

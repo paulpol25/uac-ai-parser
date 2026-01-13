@@ -254,7 +254,13 @@ def analyze(
         
         try:
             analyzer = AIAnalyzer(model=model, provider=provider)
-            analyzer.load_artifacts(artifacts)
+            
+            # Pre-calculate chunks to set progress total
+            # We'll just define a callback that creates a sub-progress for embeddings
+            def embedding_progress_callback(n):
+                progress.update(task, advance=0, description=f"Embedding chunks... ({n} processed)")
+
+            analyzer.load_artifacts(artifacts, progress_callback=embedding_progress_callback)
         except RuntimeError as e:
             console.print(f"[red]Error:[/red] {e}")
             console.print("\n[yellow]Make sure Ollama is running: ollama serve[/yellow]")
@@ -345,7 +351,11 @@ def interactive(
         
         try:
             analyzer = AIAnalyzer(model=model, provider=provider)
-            analyzer.load_artifacts(artifacts)
+            
+            def embedding_progress_callback(n):
+                progress.update(task, advance=0, description=f"Embedding chunks... ({n} processed)")
+                
+            analyzer.load_artifacts(artifacts, progress_callback=embedding_progress_callback)
         except RuntimeError as e:
             console.print(f"[red]Error:[/red] {e}")
             raise click.Abort()

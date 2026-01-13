@@ -52,7 +52,7 @@ An AI-powered parser for [UAC (Unix-like Artifacts Collector)](https://github.co
 ### Install from source
 
 ```bash
-git clone https://github.com/yourusername/uac-ai-parser.git
+git clone https://github.com/paulpol25/uac-ai-parser.git
 cd uac-ai-parser
 pip install -e ".[dev]"
 ```

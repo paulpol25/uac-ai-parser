@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
@@ -126,7 +127,7 @@ class AIAnalyzer:
         
         return self._vector_store
     
-    def load_artifacts(self, uac_output: UACOutput) -> int:
+    def load_artifacts(self, uac_output: UACOutput, progress_callback: Any = None) -> int:
         """
         Load UAC artifacts into the analyzer.
         
@@ -135,6 +136,7 @@ class AIAnalyzer:
         
         Args:
             uac_output: Parsed UAC output
+            progress_callback: Optional callable(n) to report progress
             
         Returns:
             Number of document chunks created
@@ -145,7 +147,7 @@ class AIAnalyzer:
         
         # Preprocess into chunks
         preprocessor = Preprocessor(
-            chunk_size=2000,
+            chunk_size=1500,
             chunk_overlap=200,
         )
         self._chunks = preprocessor.process(uac_output)
@@ -153,11 +155,50 @@ class AIAnalyzer:
         # Load into vector store
         vector_store = self._ensure_vector_store()
         vector_store.clear()  # Clear previous data
-        num_added = vector_store.add_documents(self._chunks)
+        num_added = vector_store.add_documents(
+            self._chunks, 
+            progress_callback=progress_callback
+        )
         
         logger.info(f"Loaded {num_added} document chunks into vector store")
         return num_added
     
+    def _generate_search_queries(self, question: str, n: int = 3) -> list[str]:
+        """
+        Generate search queries for better retrieval.
+        
+        Uses the LLM to expand the user's question into specific forensic 
+        search terms to improve recall.
+        """
+        llm = self._ensure_llm()
+        prompt = f"""You are an expert forensic investigator helper.
+Generate {n} specific search queries to find evidence for the following question in a forensic dataset.
+The underlying search engine uses semantic vector search.
+IMPORTANT: Generate natural language phrases describing the content you want to find.
+DO NOT use boolean operators (AND, OR), parentheses, or complex search syntax.
+DO NOT use phrases like "technical term:" or "synonym:".
+
+Focus on:
+1. Natural descriptions of the file content (e.g., "content of /etc/passwd file", "list of user accounts")
+2. Descriptions of the specific log events (e.g., "successful login events", "sudo command execution logs")
+3. Specific identifiers or keywords (e.g., "uid=0", "nmap", "event id 4624")
+
+Question: {question}
+
+Output ONLY the {n} queries, one per line. Do not number them or add explanations."""
+        
+        try:
+            # high temperature for creativity in search terms
+            response = llm.generate(
+                prompt=prompt, 
+                system_prompt="You are a search query generator. Output only list of queries.",
+            )
+            queries = [q.strip() for q in response.content.split('\n') if q.strip()]
+            return queries[:n]
+        except Exception as e:
+            logger.warning(f"Failed to generate search queries: {e}")
+            return [question]
+
     def query(
         self,
         question: str,
@@ -181,17 +222,67 @@ class AIAnalyzer:
         llm = self._ensure_llm()
         vector_store = self._ensure_vector_store()
         
-        # Retrieve relevant context
-        context = vector_store.get_context_for_query(question, max_context_tokens)
+        # 1. Query Expansion
+        search_queries = self._generate_search_queries(question)
+        if question not in search_queries:
+            search_queries.insert(0, question)
+            
+        logger.info(f"Expanded queries: {search_queries}")
         
-        # Format prompt
+        # 2. Multi-query search and deduplication
+        all_results = []
+        seen_hashes = set()
+        
+        for q in search_queries:
+            results = vector_store.search(q, top_k=5)
+            for doc, metadata, score in results:
+                # Deduplicate based on content hash
+                doc_hash = hashlib.md5(doc.encode()).hexdigest()
+                if doc_hash not in seen_hashes:
+                    seen_hashes.add(doc_hash)
+                    all_results.append((doc, metadata, score))
+        
+        # Sort by relevance score (descending)
+        all_results.sort(key=lambda x: x[2], reverse=True)
+        
+        # 3. Build Context
+        context_parts = []
+        current_tokens = 0
+        evidence_list = []
+        
+        for doc, metadata, score in all_results:
+            # Roughly estimate tokens (4 chars/token)
+            doc_tokens = len(doc) // 4
+            
+            if current_tokens + doc_tokens > max_context_tokens:
+                break
+                
+            source = metadata.get("source", "unknown")
+            artifact_type = metadata.get("artifact_type", "unknown")
+            
+            context_header = f"--- Source: {source} ({artifact_type}) [relevance: {score:.2f}] ---"
+            context_parts.append(f"{context_header}\n{doc}\n")
+            
+            # Collect evidence for the result object
+            if include_evidence and len(evidence_list) < 5:
+                evidence_list.append(Evidence(
+                    artifact_type=artifact_type,
+                    artifact_path=source,
+                    raw_data=doc[:500],
+                    relevance_score=score,
+                ))
+            
+            current_tokens += doc_tokens
+            
+        context = "\n".join(context_parts)
+        
+        # 4. Generate Answer
         prompt_template = PromptLibrary.QUERY_RESPONSE
         prompt = prompt_template.format(
             query=question,
             context=context,
         )
         
-        # Generate response
         response = llm.generate(
             prompt=prompt,
             system_prompt=PromptLibrary.SYSTEM_PROMPT,
@@ -201,22 +292,14 @@ class AIAnalyzer:
         result = QueryResult(
             query=question,
             answer=response.content,
-            confidence=0.7,  # TODO: Extract from response
+            confidence=0.7,  # Placeholder
             tokens_used=response.tokens_used,
             model_used=self.config.model,
             query_time_seconds=(datetime.now() - start_time).total_seconds(),
         )
         
-        # Add evidence if requested
         if include_evidence:
-            search_results = vector_store.search(question, top_k=5)
-            for doc, metadata, score in search_results:
-                result.evidence.append(Evidence(
-                    artifact_type=metadata.get("artifact_type", "unknown"),
-                    artifact_path=metadata.get("source"),
-                    raw_data=doc[:500],
-                    relevance_score=score,
-                ))
+            result.evidence = evidence_list
         
         # Suggest follow-up queries
         result.suggested_queries = self._suggest_followup_queries(question)

@@ -67,6 +67,9 @@ class VectorStore:
             from chromadb.config import Settings
             
             # Initialize ChromaDB
+            import os
+            os.environ["ANONYMIZED_TELEMETRY"] = "False"
+            
             if self.persist_dir:
                 self.persist_dir.mkdir(parents=True, exist_ok=True)
                 self._chroma_client = chromadb.PersistentClient(
@@ -116,6 +119,7 @@ class VectorStore:
         self,
         documents: list[Any],  # DocumentChunk from preprocessor
         batch_size: int = 100,
+        progress_callback: Any = None,
     ) -> int:
         """
         Add documents to the vector store.
@@ -123,6 +127,7 @@ class VectorStore:
         Args:
             documents: List of DocumentChunk objects
             batch_size: Number of documents to add per batch
+            progress_callback: Optional callable(n) to report progress
             
         Returns:
             Number of documents added
@@ -172,6 +177,9 @@ class VectorStore:
                     metadatas=metadatas,
                 )
                 total_added += len(batch)
+                
+                if progress_callback:
+                    progress_callback(len(batch))
                 
             except Exception as e:
                 logger.warning(f"Failed to add batch: {e}")
