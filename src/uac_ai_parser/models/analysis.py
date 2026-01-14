@@ -167,6 +167,8 @@ class Anomaly(BaseModel):
 class AnomalyReport(BaseModel):
     """Complete anomaly detection report."""
     
+    model_config = {"protected_namespaces": ()}
+    
     report_id: str
     generated_at: datetime
     source_file: str
@@ -251,6 +253,8 @@ class AnomalyReport(BaseModel):
 
 class QueryResult(BaseModel):
     """Result from an AI query against the forensic data."""
+    
+    model_config = {"protected_namespaces": ()}
     
     query: str = Field(description="Original user query")
     answer: str = Field(description="AI-generated answer")
@@ -396,6 +400,8 @@ class IncidentSummary:
 
 class AnalysisResult(BaseModel):
     """Complete AI analysis result container."""
+    
+    model_config = {"protected_namespaces": ()}
     
     # Source information
     source_file: str

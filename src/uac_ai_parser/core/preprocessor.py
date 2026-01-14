@@ -110,31 +110,50 @@ class Preprocessor:
         self.include_metadata = include_metadata
         self.max_chunks_per_type = max_chunks_per_type
     
-    def process(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def process(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """
         Process UAC output into document chunks.
         
         Args:
             uac_output: Parsed UAC output
             
-        Returns:
-            List of document chunks ready for embedding
+        Yields:
+            Document chunks ready for embedding
         """
         logger.info("Preprocessing UAC output for LLM consumption")
         
-        all_chunks = []
+        count = 0
         
         # Process each artifact type
-        all_chunks.extend(self._process_bodyfile(uac_output))
-        all_chunks.extend(self._process_processes(uac_output))
-        all_chunks.extend(self._process_network(uac_output))
-        all_chunks.extend(self._process_users(uac_output))
-        all_chunks.extend(self._process_timeline(uac_output))
-        all_chunks.extend(self._process_logs(uac_output))
-        all_chunks.extend(self._process_summary(uac_output))
+        for chunk in self._process_bodyfile(uac_output):
+            yield chunk
+            count += 1
+            
+        for chunk in self._process_processes(uac_output):
+            yield chunk
+            count += 1
+            
+        for chunk in self._process_network(uac_output):
+            yield chunk
+            count += 1
+            
+        for chunk in self._process_users(uac_output):
+            yield chunk
+            count += 1
+            
+        for chunk in self._process_timeline(uac_output):
+            yield chunk
+            count += 1
+            
+        for chunk in self._process_logs(uac_output):
+            yield chunk
+            count += 1
+            
+        for chunk in self._process_summary(uac_output):
+            yield chunk
+            count += 1
         
-        logger.info(f"Generated {len(all_chunks)} document chunks")
-        return all_chunks
+        logger.info(f"Generated {count} document chunks")
     
     def _generate_chunk_id(self, content: str, prefix: str) -> str:
         """Generate unique chunk ID."""
@@ -185,30 +204,10 @@ class Preprocessor:
             if start < 0:
                 start = 0
     
-    def _process_summary(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_summary(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Create summary chunk for quick context."""
-        chunks = []
-        
-        summary = f"""# System Analysis Summary
+        summary = f"# System Analysis Summary\n\n## System Information\n- Hostname: {uac_output.hostname or 'Unknown'}\n- OS Type: {uac_output.os_type or 'Unknown'}\n- Collection Time: {uac_output.collection_time.isoformat() if uac_output.collection_time else 'Unknown'}\n\n## Artifact Counts\n- Total Files: {uac_output.bodyfile.total_entries if uac_output.bodyfile else 0}\n- Executable Files: {len(uac_output.bodyfile.executables) if uac_output.bodyfile else 0}\n- SUID/SGID Files: {len(uac_output.bodyfile.setuid_files) if uac_output.bodyfile else 0}\n- Running Processes: {len(uac_output.live_response.processes) if uac_output.live_response else 0}\n- Network Connections: {len(uac_output.live_response.network_connections) if uac_output.live_response else 0}\n- User Accounts: {len(uac_output.live_response.users) if uac_output.live_response else 0}\n- Log Entries: {len(uac_output.logs)}\n- Timeline Events: {len(uac_output.timeline)}\n\n## Key Findings Preview\n"
 
-## System Information
-- Hostname: {uac_output.hostname or 'Unknown'}
-- OS Type: {uac_output.os_type or 'Unknown'}
-- Collection Time: {uac_output.collection_time.isoformat() if uac_output.collection_time else 'Unknown'}
-
-## Artifact Counts
-- Total Files: {uac_output.bodyfile.total_entries if uac_output.bodyfile else 0}
-- Executable Files: {len(uac_output.bodyfile.executables) if uac_output.bodyfile else 0}
-- SUID/SGID Files: {len(uac_output.bodyfile.setuid_files) if uac_output.bodyfile else 0}
-- Running Processes: {len(uac_output.live_response.processes) if uac_output.live_response else 0}
-- Network Connections: {len(uac_output.live_response.network_connections) if uac_output.live_response else 0}
-- User Accounts: {len(uac_output.live_response.users) if uac_output.live_response else 0}
-- Log Entries: {len(uac_output.logs)}
-- Timeline Events: {len(uac_output.timeline)}
-
-## Key Findings Preview
-"""
-        
         # Add notable findings
         if uac_output.bodyfile and uac_output.bodyfile.setuid_files:
             summary += "\n### SUID/SGID Files (Potential Privilege Escalation)\n"
@@ -239,7 +238,7 @@ class Preprocessor:
                         summary += f" ({conn.program})"
                     summary += "\n"
         
-        chunk = DocumentChunk(
+        yield DocumentChunk(
             chunk_id=self._generate_chunk_id(summary, "summary"),
             content=summary,
             metadata={
@@ -251,16 +250,11 @@ class Preprocessor:
             artifact_type="summary",
             relevance_tags=["overview", "summary"],
         )
-        chunks.append(chunk)
-        
-        return chunks
     
-    def _process_bodyfile(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_bodyfile(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Process bodyfile entries into chunks."""
-        chunks = []
-        
         if not uac_output.bodyfile:
-            return chunks
+            return
         
         # Group entries by category for better context
         categories = {
@@ -291,7 +285,7 @@ class Preprocessor:
             content = "".join(content_lines)
             
             for chunk_text in self._chunk_text(content, f"bodyfile_{category}"):
-                chunk = DocumentChunk(
+                yield DocumentChunk(
                     chunk_id=self._generate_chunk_id(chunk_text, f"bodyfile_{category}"),
                     content=chunk_text,
                     metadata={
@@ -303,16 +297,11 @@ class Preprocessor:
                     artifact_type="bodyfile",
                     relevance_tags=self._tag_content(chunk_text) + [category],
                 )
-                chunks.append(chunk)
-        
-        return chunks
     
-    def _process_processes(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_processes(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Process process information into chunks."""
-        chunks = []
-        
         if not uac_output.live_response or not uac_output.live_response.processes:
-            return chunks
+            return
         
         processes = uac_output.live_response.processes
         
@@ -352,7 +341,7 @@ class Preprocessor:
             content = "".join(content_lines)
             
             for chunk_text in self._chunk_text(content, f"processes_{group_name}"):
-                chunk = DocumentChunk(
+                yield DocumentChunk(
                     chunk_id=self._generate_chunk_id(chunk_text, f"proc_{group_name}"),
                     content=chunk_text,
                     metadata={
@@ -364,16 +353,11 @@ class Preprocessor:
                     artifact_type="process",
                     relevance_tags=self._tag_content(chunk_text) + ["process", group_name],
                 )
-                chunks.append(chunk)
-        
-        return chunks
     
-    def _process_network(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_network(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Process network connections into chunks."""
-        chunks = []
-        
         if not uac_output.live_response or not uac_output.live_response.network_connections:
-            return chunks
+            return
         
         connections = uac_output.live_response.network_connections
         
@@ -407,7 +391,7 @@ class Preprocessor:
             content = "".join(content_lines)
             
             for chunk_text in self._chunk_text(content, f"network_{group_name}"):
-                chunk = DocumentChunk(
+                yield DocumentChunk(
                     chunk_id=self._generate_chunk_id(chunk_text, f"net_{group_name}"),
                     content=chunk_text,
                     metadata={
@@ -419,16 +403,11 @@ class Preprocessor:
                     artifact_type="network",
                     relevance_tags=self._tag_content(chunk_text) + ["network", group_name],
                 )
-                chunks.append(chunk)
-        
-        return chunks
     
-    def _process_users(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_users(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Process user information into chunks."""
-        chunks = []
-        
         if not uac_output.live_response or not uac_output.live_response.users:
-            return chunks
+            return
         
         users = uac_output.live_response.users
         
@@ -457,7 +436,7 @@ class Preprocessor:
         # Add a "keywords" section to help semantic retrieval for broad queries
         content += "\n\nKeywords: list of users, usernames, user accounts, login accounts, system users, /etc/passwd content"
         
-        chunk = DocumentChunk(
+        yield DocumentChunk(
             chunk_id=self._generate_chunk_id(content, "users"),
             content=content,
             metadata={"user_count": len(users)},
@@ -466,16 +445,11 @@ class Preprocessor:
             artifact_type="user",
             relevance_tags=self._tag_content(content) + ["user", "account", "passwd"],
         )
-        chunks.append(chunk)
-        
-        return chunks
     
-    def _process_timeline(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_timeline(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Process timeline events into chunks."""
-        chunks = []
-        
         if not uac_output.timeline:
-            return chunks
+            return
         
         events = uac_output.timeline
         
@@ -488,7 +462,11 @@ class Preprocessor:
             hourly_events[hour_key].append(event)
         
         # Create chunks for each hour
-        for hour, hour_events in list(hourly_events.items())[:self.max_chunks_per_type]:
+        chunk_count = 0
+        for hour, hour_events in hourly_events.items():
+            if chunk_count >= self.max_chunks_per_type:
+                break
+                
             content_lines = [f"# Timeline Events: {hour}\n\n"]
             
             for event in hour_events[:100]:
@@ -500,7 +478,7 @@ class Preprocessor:
             
             content = "".join(content_lines)
             
-            chunk = DocumentChunk(
+            yield DocumentChunk(
                 chunk_id=self._generate_chunk_id(content, f"timeline_{hour}"),
                 content=content,
                 metadata={
@@ -513,16 +491,12 @@ class Preprocessor:
                 timestamp=hour_events[0].timestamp if hour_events else None,
                 relevance_tags=self._tag_content(content) + ["timeline"],
             )
-            chunks.append(chunk)
-        
-        return chunks
+            chunk_count += 1
     
-    def _process_logs(self, uac_output: UACOutput) -> list[DocumentChunk]:
+    def _process_logs(self, uac_output: UACOutput) -> Iterator[DocumentChunk]:
         """Process log entries into chunks."""
-        chunks = []
-        
         if not uac_output.logs:
-            return chunks
+            return
         
         # Group by source file
         from collections import defaultdict
@@ -532,8 +506,9 @@ class Preprocessor:
             source_name = Path(log.source_file).name
             logs_by_source[source_name].append(log)
         
+        chunk_count = 0
         for source, entries in logs_by_source.items():
-            if len(chunks) >= self.max_chunks_per_type:
+            if chunk_count >= self.max_chunks_per_type:
                 break
             
             content_lines = [f"# Log File: {source}\n\n"]
@@ -549,7 +524,7 @@ class Preprocessor:
             content = "".join(content_lines)
             
             for chunk_text in self._chunk_text(content, f"log_{source}"):
-                chunk = DocumentChunk(
+                yield DocumentChunk(
                     chunk_id=self._generate_chunk_id(chunk_text, f"log_{source}"),
                     content=chunk_text,
                     metadata={
@@ -561,12 +536,10 @@ class Preprocessor:
                     artifact_type="log",
                     relevance_tags=self._tag_content(chunk_text) + ["log", source.replace(".", "_")],
                 )
-                chunks.append(chunk)
                 
-                if len(chunks) >= self.max_chunks_per_type:
+                chunk_count += 1
+                if chunk_count >= self.max_chunks_per_type:
                     break
-        
-        return chunks
     
     def to_jsonl(self, chunks: list[DocumentChunk], output_path: str | Path) -> None:
         """Export chunks to JSONL format."""

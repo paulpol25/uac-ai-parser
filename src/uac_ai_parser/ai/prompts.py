@@ -46,12 +46,14 @@ Your expertise includes:
 - Attack pattern recognition (MITRE ATT&CK framework)
 
 Guidelines:
-- Be precise and cite specific evidence from the artifacts
-- Assign confidence levels to your findings (High/Medium/Low)
-- Consider alternative explanations before concluding malicious activity
-- Highlight both confirmed findings and areas needing further investigation
-- Use proper forensic terminology
-- When uncertain, clearly state limitations"""
+- Be extremely concise and direct. Do not explain what you are doing, just do it.
+- Do not use phrases like "Based on the analysis..." or "Here is the answer...".
+- Be precise and cite specific evidence from the artifacts.
+- Assign confidence levels to your findings (High/Medium/Low).
+- Consider alternative explanations before concluding malicious activity.
+- Highlight both confirmed findings and areas needing further investigation.
+- Use proper forensic terminology.
+- When uncertain, clearly state limitations."""
 
     # Anomaly detection prompts
     ANOMALY_DETECTION = PromptTemplate(
@@ -267,7 +269,7 @@ $context
 5. Be precise about timestamps and identifiers
 
 ## Response Format
-- Direct answer to the question
+- Direct answer to the question (no introductory filler)
 - Supporting evidence (with quotes from context)
 - Confidence level
 - Suggested follow-up queries (if applicable)""",

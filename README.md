@@ -7,9 +7,10 @@ An AI-powered parser for [UAC (Unix-like Artifacts Collector)](https://github.co
 - **🗜️ Smart Extraction**: Automatically parse UAC tar.gz/zip outputs respecting volatility order
 - **📊 Bodyfile Analysis**: Parse TSK-compatible bodyfiles with file metadata and hash analysis
 - **⏱️ Timeline Generation**: Integration with Plaso for super timelines + AI-powered timeline analysis
-- **🤖 AI-Powered Analysis**: Local LLM support via Ollama with RAG for contextual insights
-- **🔍 Anomaly Detection**: AI-driven anomaly scoring for suspicious artifacts
-- **💬 Interactive Queries**: Natural language queries against forensic data
+- **🤖 AI-Powered Analysis**: Local LLM support via Ollama with RAG for contextual insights. Optimized prompts for deep reasoning models (DeepSeek, etc).
+- **� Automated Reporting**: Auto-save `/summary` and `/anomalies` results to Markdown/CSV during interactive sessions.
+- **�🔍 Anomaly Detection**: AI-driven anomaly scoring for suspicious artifacts
+- **💬 Interactive Queries**: Natural language queries against forensic data with `/save` capabilities
 - **📈 Visualizations**: Timeline visualizations with Plotly
 - **📤 Export Options**: JSONL for Timesketch, Markdown reports, custom SIEM formats
 
@@ -36,9 +37,9 @@ An AI-powered parser for [UAC (Unix-like Artifacts Collector)](https://github.co
 │  │                    Output Layer                                │ │
 │  │  • Anomaly Reports    • Timeline Visualizations               │ │
 │  │  • JSONL Export       • Markdown Reports                      │ │
-│  │  • Interactive CLI    • Timesketch Integration                │ │
+│  │  • Interactive CLI    • Plaso Super Timelines                 │ │
 │  └───────────────────────────────────────────────────────────────┘ │
-└─────────────────────────────────────────────────────────────────────┘
+41: └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Installation
@@ -47,7 +48,7 @@ An AI-powered parser for [UAC (Unix-like Artifacts Collector)](https://github.co
 
 - Python 3.10+
 - [Ollama](https://ollama.ai/) (for local LLM support)
-- Docker (optional, for Plaso integration)
+- Docker (Required for Plaso integration)
 
 ### Install from source
 
@@ -63,8 +64,8 @@ pip install -e ".[dev]"
 # Install Ollama (see https://ollama.ai/)
 ollama pull llama3.1
 
-# Or use a smaller model for faster inference
-ollama pull llama3.2:3b
+# For best results with complex reasoning, try DeepSeek
+ollama pull deepseek-r1:7b
 ```
 
 ## Quick Start
@@ -94,25 +95,46 @@ uac-ai analyze /path/to/uac-output.tar.gz --anomalies
 
 ### Interactive Mode
 
+Start an interactive session to query your data naturally. Results can be saved to disk.
+
 ```bash
 # Start interactive session
 uac-ai interactive /path/to/uac-output.tar.gz
+```
 
-# Example queries in interactive mode:
+**Commands:**
+
+- `/summary` - Generate and save an incident summary (Markdown)
+- `/anomalies` - Detect and save anomalies (Markdown + CSV)
+- `/save` - Save the output of the last query to a file
+- `/quit` - Exit
+
+**Example usage:**
+```text
 > What processes were running without binary on disk?
-> Show me SSH activity timeline
-> Find suspicious cron jobs
-> Correlate network connections with process activity
+(AI analyzes and responds...)
+> /save
+[green]Last result saved to analysis_20240120_123456.md[/green]
+
+> /summary
+(Generates summary...)
+[green]Summary saved to summary_20240120_123456.md[/green]
 ```
 
 ### Timeline Generation
 
-```bash
-# Generate super timeline using Plaso (requires Docker)
-uac-ai timeline /path/to/uac-output.tar.gz --use-plaso
+Generate interactive timelines. You can use the internal parser (fast) or Plaso (comprehensive, requires Docker).
 
-# Generate timeline visualization
-uac-ai timeline /path/to/uac-output.tar.gz --visualize
+```bash
+# Fast generation using internal parser
+uac-ai timeline /path/to/uac-output.tar.gz -o timeline.html
+
+# Comprehensive generation using Plaso (requires Docker)
+# Generates both a CSV and an interactive HTML visualization
+uac-ai timeline /path/to/uac-output.tar.gz --use-plaso -o full_timeline.html
+
+# Specify custom Plaso image
+uac-ai timeline /path/to/uac-output.tar.gz --use-plaso --plaso-image log2timeline/plaso:latest
 ```
 
 ### Export Options
@@ -200,15 +222,11 @@ anomaly_weights:
 
 ```python
 from uac_ai_parser import UACParser, AIAnalyzer
+from uac_ai_parser.integrations.plaso import PlasoIntegration
 
 # Parse UAC output
 parser = UACParser("/path/to/uac-output.tar.gz")
 artifacts = parser.parse()
-
-# Access specific artifacts
-bodyfile = artifacts.bodyfile
-processes = artifacts.live_response.processes
-network = artifacts.live_response.network
 
 # AI Analysis
 analyzer = AIAnalyzer(model="llama3.1")
@@ -217,17 +235,11 @@ analyzer.load_artifacts(artifacts)
 # Query the data
 result = analyzer.query("What suspicious SSH activity occurred?")
 print(result.answer)
-print(result.evidence)
 
-# Get anomaly scores
-anomalies = analyzer.detect_anomalies()
-for anomaly in anomalies.high_confidence:
-    print(f"{anomaly.type}: {anomaly.description} (score: {anomaly.score})")
-
-# Generate timeline
-timeline = analyzer.build_timeline()
-timeline.to_jsonl("output.jsonl")
-timeline.visualize("timeline.html")
+# Plaso Integration
+plaso = PlasoIntegration()
+if plaso.is_available():
+    csv_path = plaso.generate_timeline("/path/to/uac-output.tar.gz", "./output")
 ```
 
 ## Supported UAC Artifacts
@@ -261,18 +273,6 @@ ruff check src tests --fix
 
 # Type checking
 mypy src
-```
-
-## Testing with Sample Data
-
-Generate sample UAC outputs from your Kali/Proxmox setup:
-
-```bash
-# On target system
-./uac -p full /tmp --output-format tar
-
-# Parse the output
-uac-ai parse /tmp/uac-hostname-*.tar.gz --verbose
 ```
 
 ## Roadmap

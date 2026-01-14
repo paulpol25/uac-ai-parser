@@ -117,7 +117,7 @@ class VectorStore:
     
     def add_documents(
         self,
-        documents: list[Any],  # DocumentChunk from preprocessor
+        documents: Any,  # Iterable[DocumentChunk]
         batch_size: int = 100,
         progress_callback: Any = None,
     ) -> int:
@@ -125,7 +125,7 @@ class VectorStore:
         Add documents to the vector store.
         
         Args:
-            documents: List of DocumentChunk objects
+            documents: Iterable of DocumentChunk objects
             batch_size: Number of documents to add per batch
             progress_callback: Optional callable(n) to report progress
             
@@ -136,56 +136,68 @@ class VectorStore:
             return 0
         
         total_added = 0
+        current_batch = []
         
-        for i in range(0, len(documents), batch_size):
-            batch = documents[i:i + batch_size]
+        for doc in documents:
+            current_batch.append(doc)
             
-            ids = []
-            contents = []
-            metadatas = []
-            
-            for doc in batch:
-                # Use chunk_id or generate one
-                doc_id = getattr(doc, "chunk_id", None)
-                if not doc_id:
-                    doc_id = hashlib.md5(doc.content[:100].encode()).hexdigest()
-                
-                ids.append(doc_id)
-                contents.append(doc.content)
-                
-                # Prepare metadata (ChromaDB has restrictions on types)
-                metadata = {
-                    "source": getattr(doc, "source", "unknown"),
-                    "source_type": getattr(doc, "source_type", "unknown"),
-                    "artifact_type": getattr(doc, "artifact_type", "unknown"),
-                }
-                
-                # Add relevance tags as comma-separated string
-                if hasattr(doc, "relevance_tags") and doc.relevance_tags:
-                    metadata["tags"] = ",".join(doc.relevance_tags)
-                
-                # Add timestamp if available
-                if hasattr(doc, "timestamp") and doc.timestamp:
-                    metadata["timestamp"] = doc.timestamp.isoformat()
-                
-                metadatas.append(metadata)
-            
-            try:
-                self._collection.add(
-                    ids=ids,
-                    documents=contents,
-                    metadatas=metadatas,
-                )
-                total_added += len(batch)
-                
+            if len(current_batch) >= batch_size:
+                self._add_batch(current_batch)
+                total_added += len(current_batch)
                 if progress_callback:
-                    progress_callback(len(batch))
-                
-            except Exception as e:
-                logger.warning(f"Failed to add batch: {e}")
+                    progress_callback(len(current_batch))
+                current_batch = []
+        
+        # Add remaining
+        if current_batch:
+            self._add_batch(current_batch)
+            total_added += len(current_batch)
+            if progress_callback:
+                progress_callback(len(current_batch))
         
         logger.info(f"Added {total_added} documents to vector store")
         return total_added
+
+    def _add_batch(self, batch: list[Any]) -> None:
+        """Helper to add a single batch to ChromaDB."""
+        ids = []
+        contents = []
+        metadatas = []
+        
+        for doc in batch:
+            # Use chunk_id or generate one
+            doc_id = getattr(doc, "chunk_id", None)
+            if not doc_id:
+                doc_id = hashlib.md5(doc.content[:100].encode()).hexdigest()
+            
+            ids.append(doc_id)
+            contents.append(doc.content)
+            
+            # Prepare metadata (ChromaDB has restrictions on types)
+            metadata = {
+                "source": getattr(doc, "source", "unknown"),
+                "source_type": getattr(doc, "source_type", "unknown"),
+                "artifact_type": getattr(doc, "artifact_type", "unknown"),
+            }
+            
+            # Add relevance tags as comma-separated string
+            if hasattr(doc, "relevance_tags") and doc.relevance_tags:
+                metadata["tags"] = ",".join(doc.relevance_tags)
+            
+            # Add timestamp if available
+            if hasattr(doc, "timestamp") and doc.timestamp:
+                metadata["timestamp"] = doc.timestamp.isoformat()
+            
+            metadatas.append(metadata)
+        
+        try:
+            self._collection.add(
+                ids=ids,
+                documents=contents,
+                metadatas=metadatas,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to add batch: {e}")
     
     def search(
         self,

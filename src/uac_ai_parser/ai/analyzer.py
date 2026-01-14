@@ -97,7 +97,8 @@ class AIAnalyzer:
         self._llm: BaseLLMClient | None = None
         self._vector_store: VectorStore | None = None
         self._uac_output: UACOutput | None = None
-        self._chunks: list[DocumentChunk] = []
+        self._uac_output: UACOutput | None = None
+        self._chunk_count: int = 0
         
         # Vector store config
         self._persist_vectors = persist_vectors
@@ -150,16 +151,19 @@ class AIAnalyzer:
             chunk_size=1500,
             chunk_overlap=200,
         )
-        self._chunks = preprocessor.process(uac_output)
+        # Preprocess into chunks (generator)
+        chunks_generator = preprocessor.process(uac_output)
         
         # Load into vector store
         vector_store = self._ensure_vector_store()
         vector_store.clear()  # Clear previous data
+        
         num_added = vector_store.add_documents(
-            self._chunks, 
+            chunks_generator, 
             progress_callback=progress_callback
         )
         
+        self._chunk_count = num_added
         logger.info(f"Loaded {num_added} document chunks into vector store")
         return num_added
     
@@ -389,7 +393,7 @@ Output ONLY the {n} queries, one per line. Do not number them or add explanation
                 -severity_order.index(a.severity),
                 -a.score
             )),
-            total_artifacts_analyzed=len(self._chunks),
+            total_artifacts_analyzed=self._chunk_count,
             analysis_duration_seconds=(datetime.now() - start_time).total_seconds(),
             model_used=self.config.model,
         )

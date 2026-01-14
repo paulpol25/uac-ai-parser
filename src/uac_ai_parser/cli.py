@@ -22,6 +22,8 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.prompt import Prompt
 from rich.table import Table
 
+from uac_ai_parser.integrations.plaso import PlasoIntegration
+
 # Setup console
 console = Console()
 
@@ -50,6 +52,19 @@ def main(ctx: click.Context, verbose: bool) -> None:
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     setup_logging(verbose)
+    
+    if not ctx.invoked_subcommand:
+        # Show banner if no subcommand (or just on main)
+        console.print(r"""
+[bold cyan]
+  _   _   _    ____      _    ___   ____arser
+ | | | | / \  / ___|    / \  |_ _| |  _ \
+ | | | |/ _ \| |       / _ \  | |  | |_) |
+ | |_| / ___ \ |___   / ___ \ | |  |  __/
+  \___/_/   \_\____| /_/   \_\___| |_|
+[/bold cyan]
+[dim]Unix-like Artifacts Collector AI Parser[/dim]
+""")
 
 
 @main.command()
@@ -367,8 +382,11 @@ def interactive(
     console.print("Type your questions, or use commands:")
     console.print("  [cyan]/anomalies[/cyan] - Run anomaly detection")
     console.print("  [cyan]/summary[/cyan]   - Generate incident summary")
+    console.print("  [cyan]/save[/cyan]      - Save last result to file")
     console.print("  [cyan]/help[/cyan]      - Show help")
     console.print("  [cyan]/quit[/cyan]      - Exit\n")
+    
+    last_result = None
     
     while True:
         try:
@@ -385,6 +403,7 @@ def interactive(
                 console.print("\n[bold]Available Commands:[/bold]")
                 console.print("  /anomalies - Run anomaly detection")
                 console.print("  /summary   - Generate incident summary")
+                console.print("  /save      - Save last analysis result")
                 console.print("  /quit      - Exit interactive mode")
                 console.print("\n[bold]Example Queries:[/bold]")
                 console.print("  What SSH activity occurred?")
@@ -393,22 +412,76 @@ def interactive(
                 console.print("  What persistence mechanisms exist?\n")
                 continue
             
-            if query.lower() == "/anomalies":
+            if query.lower().startswith("/anomalies"):
                 with console.status("Running anomaly detection..."):
                     report = analyzer.detect_anomalies()
                 console.print(Markdown(report.to_markdown()))
+                
+                # Auto-save results
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                md_file = f"anomalies_{ts}.md"
+                csv_file = f"anomalies_{ts}.csv"
+                
+                # Save Markdown
+                with open(md_file, "w") as f:
+                    f.write(report.to_markdown())
+                
+                # Save CSV
+                try:
+                    import pandas as pd
+                    # Flatten anomalies for CSV
+                    data = []
+                    for a in report.anomalies:
+                        row = {
+                            "id": a.anomaly_id,
+                            "type": a.anomaly_type,
+                            "severity": a.severity,
+                            "score": a.score,
+                            "title": a.title,
+                            "description": a.description,
+                            "artifact": a.source_artifact
+                        }
+                        data.append(row)
+                    pd.DataFrame(data).to_csv(csv_file, index=False)
+                    console.print(f"\n[green]Results saved to {md_file} and {csv_file}[/green]")
+                except ImportError:
+                    console.print(f"\n[green]Report saved to {md_file}[/green] (Install pandas for CSV support)")
                 continue
             
-            if query.lower() == "/summary":
+            if query.lower().startswith("/summary"):
                 with console.status("Generating summary..."):
                     summary = analyzer.generate_summary()
                 console.print(Markdown(summary.to_markdown()))
+                
+                # Auto-save results
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                md_file = f"summary_{ts}.md"
+                with open(md_file, "w") as f:
+                    f.write(summary.to_markdown())
+                console.print(f"\n[green]Summary saved to {md_file}[/green]")
+                continue
+            
+            if query.lower().startswith("/save"):
+                if last_result:
+                    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    fname = f"analysis_{ts}.md"
+                    with open(fname, "w") as f:
+                        f.write(f"# Analysis Query: {last_result.query}\n\n")
+                        f.write(last_result.answer)
+                        if last_result.evidence:
+                            f.write("\n\n## Evidence\n")
+                            for ev in last_result.evidence:
+                                f.write(f"- {ev.artifact_type}: {ev.raw_data}\n")
+                    console.print(f"[green]Last result saved to {fname}[/green]")
+                else:
+                    console.print("[yellow]No result to save yet[/yellow]")
                 continue
             
             # Regular query
             console.print()
             with console.status("Analyzing..."):
                 result = analyzer.query(query)
+                last_result = result
             
             console.print(Markdown(result.answer))
             
@@ -528,7 +601,7 @@ def export(
     "-o", "--output",
     type=click.Path(),
     default="timeline.html",
-    help="Output HTML file",
+    help="Output HTML file (or directory for Plaso outputs)",
 )
 @click.option(
     "--start",
@@ -538,6 +611,16 @@ def export(
     "--end",
     help="End time filter (ISO format)",
 )
+@click.option(
+    "--use-plaso",
+    is_flag=True,
+    help="Use Plaso for super timeline generation (requires Docker)",
+)
+@click.option(
+    "--plaso-image",
+    default="log2timeline/plaso:latest",
+    help="Plaso Docker image to use",
+)
 @click.pass_context
 def timeline(
     ctx: click.Context,
@@ -545,86 +628,155 @@ def timeline(
     output: str,
     start: Optional[str],
     end: Optional[str],
+    use_plaso: bool,
+    plaso_image: str,
 ) -> None:
     """
     Generate timeline visualization.
     
-    Creates an interactive HTML timeline of forensic events
-    using Plotly.
+    Creates an interactive HTML timeline of forensic events using Plotly. 
+    
+    If --use-plaso is specified, it runs a Dockerized Plaso instance to generate 
+    a comprehensive bodyfile/event list, which is then parsed and visualized.
+    This provides significantly more detail than the default parser.
     """
     from datetime import datetime
     from uac_ai_parser.core.parser import UACParser
     
     console.print(f"\n[bold]Generating timeline:[/bold] {archive}\n")
     
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Parsing artifacts...", total=None)
-        
-        parser = UACParser(archive)
-        artifacts = parser.parse()
-        
-        progress.update(task, description="Building timeline...")
-        
-        events = artifacts.timeline
-        
-        # Filter by time range if specified
-        if start:
-            start_dt = datetime.fromisoformat(start)
-            events = [e for e in events if e.timestamp >= start_dt]
-        if end:
-            end_dt = datetime.fromisoformat(end)
-            events = [e for e in events if e.timestamp <= end_dt]
-        
-        if not events:
-            console.print("[yellow]No timeline events found[/yellow]")
-            return
-        
-        progress.update(task, description="Generating visualization...")
-        
-        try:
-            import plotly.express as px
-            import pandas as pd
+    # Plaso Integration
+    plaso_events = []
+    if use_plaso:
+        plaso = PlasoIntegration(docker_image=plaso_image)
+        if not plaso.is_available():
+            console.print("[yellow]Plaso/Docker not available. Falling back to internal parser.[/yellow]")
+        else:
+            with console.status("Running Plaso (this may take a while)..."):
+                # Use archive directory for output if not specified or if output is a file
+                output_path_obj = Path(output)
+                output_dir = output_path_obj.parent if output_path_obj.suffix else output_path_obj
+                
+                timeline_csv = plaso.generate_timeline(archive, output_dir)
+                
+                if timeline_csv and timeline_csv.exists():
+                    console.print(f"[green]Plaso timeline generated:[/green] {timeline_csv}")
+                    
+                    # Parse Plaso CSV for visualization
+                    console.print("Parsing Plaso CSV for visualization...")
+                    raw_events = plaso.parse_l2tcsv(timeline_csv)
+                    
+                    # Normalize Plaso events to match our internal format
+                    for e in raw_events:
+                        if not e.get("timestamp"):
+                            continue
+                        
+                        plaso_events.append({
+                            "timestamp": e["timestamp"],
+                            "source_type": e.get("sourcetype", "plaso"),
+                            "source": e.get("source", "plaso"),
+                            "message": f"{e.get('desc', '')} ({e.get('filename', '')})",
+                        })
+                    
+                    console.print(f"Loaded {len(plaso_events)} events from Plaso timeline")
+                else:
+                    console.print("[red]Plaso generation failed. Falling back to internal parser.[/red]")
+
+    # Internal Parser (if Plaso not used or failed, OR if we want to combine? For now, exclusive or fall-through)
+    internal_events = []
+    hostname = "Unknown"
+    
+    if not plaso_events:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Parsing artifacts...", total=None)
             
-            # Convert to DataFrame
-            df = pd.DataFrame([
-                {
+            parser = UACParser(archive)
+            artifacts = parser.parse()
+            hostname = artifacts.hostname or "Unknown"
+            
+            progress.update(task, description="Building timeline...")
+            
+            for e in artifacts.timeline:
+                internal_events.append({
                     "timestamp": e.timestamp,
                     "source_type": e.source_type,
                     "source": e.source,
-                    "message": e.message[:100],
-                }
-                for e in events[:5000]  # Limit for performance
-            ])
+                    "message": e.message,
+                })
+
+    # Combine events (prioritize Plaso if available, otherwise internal)
+    # If Plaso was successful, plaso_events is populated.
+    events_data = plaso_events if plaso_events else internal_events
+    
+    # Filter by time range if specified
+    if start:
+        start_dt = datetime.fromisoformat(start)
+        events_data = [e for e in events_data if e["timestamp"] >= start_dt]
+    if end:
+        end_dt = datetime.fromisoformat(end)
+        events_data = [e for e in events_data if e["timestamp"] <= end_dt]
+    
+    if not events_data:
+        console.print("[yellow]No timeline events found[/yellow]")
+        return
+    
+    console.print("Generating visualization...")
+    
+    try:
+        import plotly.express as px
+        import pandas as pd
+        
+        # Convert to DataFrame
+        # Limit to reasonable number for visualization to avoid browser crash
+        limit = 20000
+        if len(events_data) > limit:
+            console.print(f"[yellow]Warning: Limiting visualization to first {limit} events (out of {len(events_data)})[/yellow]")
+        
+        df = pd.DataFrame([
+            {
+                "timestamp": e["timestamp"],
+                "source_type": e["source_type"],
+                "source": e["source"],
+                "message": e["message"][:200],  # Truncate long messages
+            }
+            for e in events_data[:limit]
+        ])
+        
+        # Create figure
+        fig = px.scatter(
+            df,
+            x="timestamp",
+            y="source_type",
+            color="source_type",
+            hover_data=["source", "message"],
+            title=f"Timeline: {hostname} ({len(df)} events)",
+        )
+        
+        fig.update_layout(
+            xaxis_title="Time",
+            yaxis_title="Event Type",
+            height=800,
+        )
+        
+        # Ensure output is a file path
+        output_file = Path(output)
+        if output_file.is_dir():
+            output_file = output_file / "timeline.html"
             
-            # Create figure
-            fig = px.scatter(
-                df,
-                x="timestamp",
-                y="source_type",
-                color="source_type",
-                hover_data=["source", "message"],
-                title=f"Timeline: {artifacts.hostname or 'Unknown'}",
-            )
+        fig.write_html(str(output_file))
+        console.print(f"[green]Visualization saved to:[/green] {output_file}")
             
-            fig.update_layout(
-                xaxis_title="Time",
-                yaxis_title="Event Type",
-                height=600,
-            )
-            
-            fig.write_html(output)
-            
-        except ImportError:
-            console.print("[red]Plotly required for visualization. Install with:[/red]")
-            console.print("pip install plotly")
-            raise click.Abort()
+    except ImportError:
+        console.print("[red]Plotly required for visualization. Install with:[/red]")
+        console.print("pip install plotly")
+        raise click.Abort()
     
     console.print(f"[green]Timeline saved to:[/green] {output}")
-    console.print(f"Total events: {len(events)}")
+    console.print(f"Total events: {len(events_data)}")
 
 
 @main.command()
@@ -688,6 +840,21 @@ def check(ctx: click.Context) -> None:
             checks.append(("Ollama", "✗ error", False))
     except Exception:
         checks.append(("Ollama", "✗ not running", False))
+    except Exception:
+        checks.append(("Ollama", "✗ not running", False))
+        
+    # Check Docker (for Plaso)
+    try:
+        import subprocess
+        docker_res = subprocess.run(["docker", "--version"], capture_output=True, timeout=2)
+        if docker_res.returncode == 0:
+            checks.append(("Docker", "✓ installed", True))
+        else:
+            checks.append(("Docker", "✗ error", False))
+    except FileNotFoundError:
+        checks.append(("Docker", "✗ not installed", False))
+    except Exception:
+        checks.append(("Docker", "✗ error", False))
     
     # Display results
     table = Table(title="System Check")
