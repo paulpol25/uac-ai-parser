@@ -15,7 +15,7 @@ Thank you for your interest in contributing to UAC AI Parser! This document prov
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/uac-ai-parser.git
+git clone https://github.com/paulpol25/uac-ai-parser.git
 cd uac-ai-parser
 
 # Create virtual environment
