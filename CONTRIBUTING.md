@@ -228,9 +228,6 @@ When reporting issues, please include:
 - Expected vs actual behavior
 - Relevant logs/error messages
 
-## Security
-
-If you discover a security vulnerability, please do NOT create a public issue. Instead, email security@example.com with details.
 
 ## License
 
