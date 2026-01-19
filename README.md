@@ -39,7 +39,7 @@ An AI-powered parser for [UAC (Unix-like Artifacts Collector)](https://github.co
 │  │  • JSONL Export       • Markdown Reports                      │ │
 │  │  • Interactive CLI    • Plaso Super Timelines                 │ │
 │  └───────────────────────────────────────────────────────────────┘ │
-41: └─────────────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Installation
